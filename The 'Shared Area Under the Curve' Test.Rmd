@@ -1,0 +1,574 @@
+<br/><br/>
+<center> <h1>**The 'Shared Area Under the Curve' Test:**</h1> </center>
+<center> <h1>**A Less-Parametric Alternative to the Analysis of Variance**</h1></center>
+<br/><br/>
+<center> <h4>ESRC Virtual 'Pizza' Lunch Presentation</h4> </center>
+<center> <h4>March 31st, 2020</h4> </center>
+<center> <h4>by David Moore</h4> </center>
+<br/><br/>
+I have two goals today:
+
+1. To convince you that the common analysis of variance (ANOVA) test that so many scientists use when looking for differences between groups is not a great option when your data do not meet ANOVA's rigid assumptions.
+2. To propose a new test that can be used in place of ANOVA.
+
+In order to use ANOVA to test for differences between groups, you must meet several assumptions.
+
+Often, these assumptions cannot be met, and we try to transform our data to meet them, or we use ANOVA regardless of not being able to meet these assumptions (hopefully, this statement does not describe you!).
+
+The two assumptions that can be particularly problematic are:
+
+1. Homogeneity of variances
+2. Normality of residuals
+
+What this means is that groups need to have roughly the same variances, and observations within groups need to be normally-distributed.
+
+Often, these assumptions are just not true for our data.
+
+Please keep in mind today that all of the distributions we use to model data have total areas under the curve equal to 1. This will be important to remember moving forward!
+
+Let's start off with an example.
+
+Here is a made-up example data set from a completely randomized design experiment.
+
+```{r}
+set.seed(5)
+Treatment_1 <- rnorm(5, 4.5, 0.3)
+Treatment_2 <- rnorm(5, 5, 0.3)
+Treatment_3 <- rnorm(5, 6, 0.3)
+Response <- c(Treatment_1, Treatment_2, Treatment_3)
+Replication <- rep(seq_len(5), 3)
+Treatment <- rep(seq_len(3), each = 5)
+Data <- data.frame(Replication = Replication, Treatment = Treatment, Response = Response)
+Data$Treatment <- as.factor(Data$Treatment)
+Data$Replication <- as.factor(Data$Replication)
+Data
+```
+
+We can use ANOVA to look for differences between treatment groups:
+
+```{r}
+summary(aov(Response ~ Treatment, Data))
+```
+
+Using ANOVA, we see that the between-group variance is significantly greater than the within-group variance, suggesting that there are significant differences between groups.
+
+Let's break this down a little bit. Our groups are our three treatments.
+
+The variances of each group are:
+
+```{r}
+Group_Variances <- aggregate(Data$Response, by = list(Data$Treatment), var)
+colnames(Group_Variances) <- c("Treatment", "Variance")
+Group_Variances
+```
+
+It looks like the variances aren't that different from one another. We can use Levene's test to see if variances are similar or dissimilar.
+
+```{r}
+library (car)
+leveneTest(Response ~ Treatment, data = Data)
+```
+
+Levene's test confirms our notion that variances are similar. (Levene's test is based on a process similar to ANOVA, but that's a story for another day.)
+
+Let's look at normality within groups.
+
+```{r}
+Split_Data <- split(Data, Data$Treatment)
+Shapiro_Wilk_Test_p_Values <- as.data.frame(lapply(Split_Data, function(x) {
+  shapiro.test(x$Response)$p.value
+}))
+colnames(Shapiro_Wilk_Test_p_Values) <- paste("Treatment", seq_len(3), sep = "_")
+Shapiro_Wilk_Test_p_Values
+```
+
+Since all of the p values are greater than 0.05, we can be pretty confident that our responses within each group are normally- distributed.
+
+Remember from before that our analysis of variance results suggested that there are group differences. Let's run a post-hoc means separation test to see which groups are actually different.
+
+```{r}
+library (agricolae)
+LSD.test(lm(Response ~ Treatment, Data), "Treatment")$groups
+HSD.test(lm(Response ~ Treatment, Data), "Treatment")$groups
+```
+
+Both the more conservative Tukey's test (which controls for experimentwise error) and the more liberal Fisher's Least Significant Difference test (which doesn't control for experimentwise error) show that treatment 3 brings about a significantly greater response than treatments 1 and 2, and treatments 1 and 2 are not significantly different than each other.
+
+What do these tests do?
+
+They assume that variances are equal within each group, and as such, they calculate a 'critical distance'. Group means must be at least as far apart as this critical distance to be deemed significantly different. If they aren't, then they aren't different.
+
+Here is a graphical representation of what just happened.
+
+We assumed that each group was normally-distributed and had the same variance.
+
+```{r, fig.show = 'hide'}
+Variance <- mean(Group_Variances$Variance)
+Group_Means <- aggregate(Data$Response, by = list(Data$Treatment), mean)
+colnames(Group_Means) <- c("Treatment", "Mean")
+X_Axis_Limits <- c(min(hist(Data$Response)$breaks), max(hist(Data$Response)$breaks))
+X_Values <- seq(X_Axis_Limits[1], X_Axis_Limits[2], 0.01)
+Treatment_1_Densities <- dnorm(X_Values, Group_Means$Mean[1], sqrt(Variance))
+Treatment_2_Densities <- dnorm(X_Values, Group_Means$Mean[2], sqrt(Variance))
+Treatment_3_Densities <- dnorm(X_Values, Group_Means$Mean[3], sqrt(Variance))
+Y_Axis_Limits <- c(0, max(c(max(Treatment_1_Densities), max(Treatment_2_Densities), max(Treatment_3_Densities))))
+```
+```{r}
+par(mar = c(9, 4, 4, 2))
+plot(0, type = 'n', xlim = X_Axis_Limits, ylim = Y_Axis_Limits, ylab = "Density", xlab = "Response", main = "Graphing the Distributions\nof the Three Groups")
+lines(X_Values, Treatment_1_Densities, col = 1)
+lines(X_Values, Treatment_2_Densities, col = 2)
+lines(X_Values, Treatment_3_Densities, col = 3)
+legend("bottom", inset = c(0, -0.667), title = "Treatment", legend = 1:3, col = 1:3, lty = 1, horiz = T, xpd = T)
+```
+
+Here we have the responses from each group graphed as separate normal curves.
+
+The critical difference between means that Fisher's Least Significant Difference test requires is 0.397:
+
+```{r}
+LSD.test(lm(Response ~ Treatment, Data), "Treatment")$statistics$LSD
+```
+
+The critical difference between means that Tukey's Honest Significant Difference test requires is 0.487:
+
+```{r}
+HSD.test(lm(Response ~ Treatment, Data), "Treatment")$statistics$MSD
+```
+
+Let's just look at Fisher's test for now. In order for a group to be different than treatment 1, it's mean needs to be 0.397 units away from treatment 1's mean.
+
+```{r, fig.show = 'hide'}
+Critical_Difference <- LSD.test(lm(Response ~ Treatment, Data), "Treatment")$statistics$LSD
+Variance <- mean(Group_Variances$Variance)
+Group_Means <- aggregate(Data$Response, by = list(Data$Treatment), mean)
+colnames(Group_Means) <- c("Treatment", "Mean")
+X_Axis_Limits <- c(min(hist(Data$Response)$breaks), max(hist(Data$Response)$breaks))
+X_Values <- seq(X_Axis_Limits[1], X_Axis_Limits[2], 0.01)
+Treatment_1_Densities <- dnorm(X_Values, Group_Means$Mean[1], sqrt(Variance))
+Treatment_2_Densities <- dnorm(X_Values, Group_Means$Mean[2], sqrt(Variance))
+Treatment_3_Densities <- dnorm(X_Values, Group_Means$Mean[3], sqrt(Variance))
+Y_Axis_Limits <- c(0, max(c(max(Treatment_1_Densities), max(Treatment_2_Densities), max(Treatment_3_Densities))))
+```
+```{r}
+par(mar = c(9, 4, 4, 2))
+plot(0, type = 'n', xlim = X_Axis_Limits, ylim = Y_Axis_Limits, ylab = "Density", xlab = "Response", main = "What Does a Means\nSeparation Test Do?")
+lines(X_Values, Treatment_1_Densities, col = 1)
+lines(X_Values, Treatment_2_Densities, col = 2)
+lines(X_Values, Treatment_3_Densities, col = 3)
+legend("bottom", inset = c(0, -0.667), title = "Treatment", legend = 1:3, col = 1:3, lty = 1, horiz = T, xpd = T)
+lines(c(X_Values[which(Treatment_1_Densities == max(Treatment_1_Densities))] - Critical_Difference, X_Values[which(Treatment_1_Densities == max(Treatment_1_Densities))] + Critical_Difference), rep(max(Treatment_1_Densities), 2))
+lines(rep(X_Values[which(Treatment_1_Densities == max(Treatment_1_Densities))] - Critical_Difference, 2), c(max(Treatment_1_Densities) - 0.025, max(Treatment_1_Densities) + 0.025))
+lines(rep(X_Values[which(Treatment_1_Densities == max(Treatment_1_Densities))] + Critical_Difference, 2), c(max(Treatment_1_Densities) - 0.025, max(Treatment_1_Densities) + 0.025))
+```
+
+Treatment 2's mean is within this tolerance, so it's not different. Treatment 3's mean isn't, so it is different.
+
+This method works really well if all groups are normally-distributed and if variances are equal. What if they're not?
+
+What if groups are normally-distributed, but variances are vastly different from one another?
+
+Here's another made-up example from a completely randomized design experiment.
+
+```{r}
+set.seed(5)
+Treatment_1 <- rnorm(5, 15, 5)
+Treatment_2 <- rnorm(5, 30, 15)
+Treatment_3 <- rnorm(5, 27, 0.5)
+Response <- c(Treatment_1, Treatment_2, Treatment_3)
+Replication <- rep(seq_len(5), 3)
+Treatment <- rep(seq_len(3), each = 5)
+Data <- data.frame(Replication = Replication, Treatment = Treatment, Response = Response)
+Data$Treatment <- as.factor(Data$Treatment)
+Data$Replication <- as.factor(Data$Replication)
+Data
+```
+
+Let's go through the same rigamarole we did in the last example.
+
+The variances of each group are:
+
+```{r}
+Group_Variances <- aggregate(Data$Response, by = list(Data$Treatment), var)
+colnames(Group_Variances) <- c("Treatment", "Variance")
+Group_Variances
+```
+
+We can clearly see that treatment 3's variance is much, much less than the variances of the other two treatments. Let's run a Levene's test.
+
+```{r}
+leveneTest(Response ~ Treatment, data = Data)
+```
+
+Levene's test indicates that variances aren't equal.
+
+Let's check for normality using the Shapiro-Wilk test again.
+
+```{r}
+Split_Data <- split(Data, Data$Treatment)
+Shapiro_Wilk_Test_p_Values <- as.data.frame(lapply(Split_Data, function(x) {
+  shapiro.test(x$Response)$p.value
+}))
+colnames(Shapiro_Wilk_Test_p_Values) <- paste("Treatment", seq_len(3), sep = "_")
+Shapiro_Wilk_Test_p_Values
+```
+
+It looks like responses from each group are normally-distributed.
+
+Let's look at these data graphically.
+
+```{r, fig.show = 'hide'}
+Group_Means <- aggregate(Data$Response, by = list(Data$Treatment), mean)
+colnames(Group_Means) <- c("Treatment", "Mean")
+X_Axis_Limits <- c(min(hist(Data$Response)$breaks), max(hist(Data$Response)$breaks))
+X_Values <- seq(X_Axis_Limits[1], X_Axis_Limits[2], 0.01)
+Treatment_1_Densities <- dnorm(X_Values, Group_Means$Mean[1], sqrt(Group_Variances$Variance[1]))
+Treatment_2_Densities <- dnorm(X_Values, Group_Means$Mean[2], sqrt(Group_Variances$Variance[2]))
+Treatment_3_Densities <- dnorm(X_Values, Group_Means$Mean[3], sqrt(Group_Variances$Variance[3]))
+Y_Axis_Limits <- c(0, max(c(max(Treatment_1_Densities), max(Treatment_2_Densities), max(Treatment_3_Densities))))
+```
+```{r}
+par(mar = c(9, 4, 4, 2))
+plot(0, type = 'n', xlim = X_Axis_Limits, ylim = Y_Axis_Limits, ylab = "Density", xlab = "Response", main = "Density Distributions\nfor All Treatment Groups")
+lines(X_Values, Treatment_1_Densities, col = 1)
+lines(X_Values, Treatment_2_Densities, col = 2)
+lines(X_Values, Treatment_3_Densities, col = 3)
+legend("bottom", inset = c(0, -0.667), title = "Treatment", legend = 1:3, col = 1:3, lty = 1, horiz = T, xpd = T)
+```
+
+Here is the same critical distance superimposed on this figure.
+
+```{r, fig.show = 'hide'}
+Group_Means <- aggregate(Data$Response, by = list(Data$Treatment), mean)
+colnames(Group_Means) <- c("Treatment", "Mean")
+X_Axis_Limits <- c(min(hist(Data$Response)$breaks), max(hist(Data$Response)$breaks))
+X_Values <- seq(X_Axis_Limits[1], X_Axis_Limits[2], 0.01)
+Treatment_1_Densities <- dnorm(X_Values, Group_Means$Mean[1], sqrt(Group_Variances$Variance[1]))
+Treatment_2_Densities <- dnorm(X_Values, Group_Means$Mean[2], sqrt(Group_Variances$Variance[2]))
+Treatment_3_Densities <- dnorm(X_Values, Group_Means$Mean[3], sqrt(Group_Variances$Variance[3]))
+Y_Axis_Limits <- c(0, max(c(max(Treatment_1_Densities), max(Treatment_2_Densities), max(Treatment_3_Densities))))
+```
+```{r}
+par(mar = c(9, 4, 4, 2))
+plot(0, type = 'n', xlim = X_Axis_Limits, ylim = Y_Axis_Limits, ylab = "Density", xlab = "Response", main = "Density Distributions\nfor All Treatment Groups")
+lines(X_Values, Treatment_1_Densities, col = 1)
+lines(X_Values, Treatment_2_Densities, col = 2)
+lines(X_Values, Treatment_3_Densities, col = 3)
+legend("bottom", inset = c(0, -0.667), title = "Treatment", legend = 1:3, col = 1:3, lty = 1, horiz = T, xpd = T)
+Critical_Difference <- LSD.test(lm(Response ~ Treatment, Data), "Treatment")$statistics$LSD
+lines(c(X_Values[which(Treatment_2_Densities == max(Treatment_2_Densities))] - Critical_Difference, X_Values[which(Treatment_2_Densities == max(Treatment_2_Densities))] + Critical_Difference), rep(max(Treatment_2_Densities), 2))
+lines(rep(X_Values[which(Treatment_2_Densities == max(Treatment_2_Densities))] - Critical_Difference, 2), c(max(Treatment_2_Densities) - 0.025, max(Treatment_2_Densities) + 0.025))
+lines(rep(X_Values[which(Treatment_2_Densities == max(Treatment_2_Densities))] + Critical_Difference, 2), c(max(Treatment_2_Densities) - 0.025, max(Treatment_2_Densities) + 0.025))
+```
+
+We can see that treatments 2 and 3 aren't significantly different based on Fisher's Least Significant Difference test. Should they be? It's evident that treatment 3's responses aren't variable, and the mean response from treatment 2 is definitely not within two standard deviations of treatment 3's mean (although treatment 3's mean is within two standard deviations of treatment 2's mean).
+
+We can also see that treatments 1 and 2 are significantly different, even though their variances are large and, relative to these large variances, their means really aren't that far apart. The weighted variance calculated by this means separation procedure takes into account the very small variance from treatment 3, so it lessens the required distance for means from more variable groups to be apart when determining if group means are different.
+
+With such vastly different variances, can we really use a one-critical-distance-fits-all solution like the Tukey's and Fisher's tests do? It just doesn't make as much sense anymore. Critical distances would need to be greater when variances are larger, and critical distances might be allowed to be smaller when variances are lower.
+
+We could try to transform our data somehow, but is there a better solution?
+
+Well, yes. First of all, if variances are vastly different from one another, you should be able to confidently say that the two groups aren't similar, even if their means are the same, just based on the fact that their variances are so different. Their means may not be different, but if the variability around them is drastically different, the observations priobably come from two different populations.
+
+I am proposing an alternative to the run-of-the-mill analysis of variance test used so widely in research. My new test does not require homogeneity of variances, and, as you will see later, an alternate version of this new test does not even require normally-distributed residuals.
+
+Let's continue with this most recent example.
+
+We already know that, since variances are not equal, we can't use a critical distance between means to determine if differences are present or not.
+
+What if we used the shared area under the curve?
+
+Treatment 1 (the black line) and treatment 2 (the red line) share quite a bit of area under their curves.
+
+```{r, fig.show = 'hide'}
+Group_Means <- aggregate(Data$Response, by = list(Data$Treatment), mean)
+colnames(Group_Means) <- c("Treatment", "Mean")
+X_Axis_Limits <- c(min(hist(Data$Response)$breaks), max(hist(Data$Response)$breaks))
+X_Values <- seq(X_Axis_Limits[1], X_Axis_Limits[2], 0.01)
+Treatment_1_Densities <- dnorm(X_Values, Group_Means$Mean[1], sqrt(Group_Variances$Variance[1]))
+Treatment_2_Densities <- dnorm(X_Values, Group_Means$Mean[2], sqrt(Group_Variances$Variance[2]))
+Treatment_3_Densities <- dnorm(X_Values, Group_Means$Mean[3], sqrt(Group_Variances$Variance[3]))
+Y_Axis_Limits <- c(0, max(c(max(Treatment_1_Densities), max(Treatment_2_Densities), max(Treatment_3_Densities))))
+```
+```{r}
+par(mar = c(9, 4, 4, 2))
+plot(0, type = 'n', xlim = X_Axis_Limits, ylim = Y_Axis_Limits, ylab = "Density", xlab = "Response", main = "Density Distributions\nfor All Treatment Groups")
+lines(X_Values, Treatment_1_Densities, col = 1)
+lines(X_Values, Treatment_2_Densities, col = 2)
+lines(X_Values, Treatment_3_Densities, col = 3)
+legend("bottom", inset = c(0, -0.667), title = "Treatment", legend = 1:3, col = 1:3, lty = 1, horiz = T, xpd = T)
+cutoff <- which(diff(Treatment_1_Densities < Treatment_2_Densities) != 0)
+polygon(c(min(X_Values), X_Values, max(X_Values)), c(0, Treatment_2_Densities[seq_len(cutoff)], Treatment_1_Densities[(cutoff + 1):length(Treatment_2_Densities)], 0), col = 4)
+```
+
+Remember, all probability distributions have a total area under the curve of 1. It follows that the area under the curve that two probability distributions share is equivalent to the probability that an observation could belong to either group.
+
+I'll say that again: the area under the curve that two probability distributions share is equivalent to the probability that an observation could belong to either group.
+
+For treatment 1 and treatment 2 in this example, that probability is 0.450. Here's why.
+
+The density functions for treatment 1 and treatment 2 intersect at x = 19.76
+
+```{r}
+X_Values[cutoff]
+```
+
+and y = 0.052.
+
+```{r}
+dnorm(X_Values[cutoff], Group_Means$Mean[2], sqrt(Group_Variances$Variance[2]))
+```
+
+Their shared area under the curve can be calculated as the area under treatment 2's density curve up to the point of intersection plus the area under treatment 1's density curve after the point of intersection.
+
+```{r}
+pnorm(X_Values[cutoff], Group_Means$Mean[2], sqrt(Group_Variances$Variance[2])) + pnorm(X_Values[cutoff], Group_Means$Mean[1], sqrt(Group_Variances$Variance[1]), lower.tail = F)
+```
+
+This probability, 0.450, is the probability that an observation from treatment 1 could have actually been from treatment 2, and it's also the probability that an observation from treatment 2 could have actually been from treatment 1.
+
+Let me state this again:
+
+This probability, 0.450, is the probability that an observation from treatment 1 could have actually been from treatment 2, and it's also the probability that an observation from treatment 2 could have actually been from treatment 1.
+
+These probabilities work regardless of the variances of each group.
+
+Why not set the cutoff probability to 0.05, as we often do with probabilities, and say that if the shared area under the curve is less than that, the groups are likely different?
+
+Let's calculate the shared are under the curve of treatments 2 and 3. This is a little bit trickier because they intersect twice instead of just once.
+
+```{r, fig.show = 'hide'}
+Group_Means <- aggregate(Data$Response, by = list(Data$Treatment), mean)
+colnames(Group_Means) <- c("Treatment", "Mean")
+X_Axis_Limits <- c(min(hist(Data$Response)$breaks), max(hist(Data$Response)$breaks))
+X_Values <- seq(X_Axis_Limits[1], X_Axis_Limits[2], 0.01)
+Treatment_1_Densities <- dnorm(X_Values, Group_Means$Mean[1], sqrt(Group_Variances$Variance[1]))
+Treatment_2_Densities <- dnorm(X_Values, Group_Means$Mean[2], sqrt(Group_Variances$Variance[2]))
+Treatment_3_Densities <- dnorm(X_Values, Group_Means$Mean[3], sqrt(Group_Variances$Variance[3]))
+Y_Axis_Limits <- c(0, max(c(max(Treatment_1_Densities), max(Treatment_2_Densities), max(Treatment_3_Densities))))
+```
+```{r}
+par(mar = c(9, 4, 4, 2))
+plot(0, type = 'n', xlim = X_Axis_Limits, ylim = Y_Axis_Limits, ylab = "Density", xlab = "Response", main = "Density Distributions\nfor All Treatment Groups")
+lines(X_Values, Treatment_1_Densities, col = 1)
+lines(X_Values, Treatment_2_Densities, col = 2)
+lines(X_Values, Treatment_3_Densities, col = 3)
+legend("bottom", inset = c(0, -0.667), title = "Treatment", legend = 1:3, col = 1:3, lty = 1, horiz = T, xpd = T)
+cutoffs <- which(diff(Treatment_2_Densities < Treatment_3_Densities) != 0)
+polygon(c(min(X_Values), X_Values, max(X_Values)), c(0, Treatment_3_Densities[1:cutoffs[1]], Treatment_2_Densities[(cutoffs[1] + 1):cutoffs[2]], Treatment_3_Densities[(cutoffs[2] + 1):length(Treatment_2_Densities)], 0), col = 5)
+```
+
+The shared area under these two curves is 0.185:
+
+```{r}
+pnorm(X_Values[cutoffs[1]], Group_Means$Mean[3], sqrt(Group_Variances$Variance[3])) + pnorm(X_Values[cutoffs[2]], Group_Means$Mean[2], sqrt(Group_Variances$Variance[2])) - pnorm(X_Values[cutoffs[1]], Group_Means$Mean[2], sqrt(Group_Variances$Variance[2])) + pnorm(X_Values[cutoffs[2]], Group_Means$Mean[3], sqrt(Group_Variances$Variance[3]), lower.tail = F)
+```
+
+Finally, let's look at the one remaining pairwise comparison we haven't looked at yet. Let's compare treatment 1 with treatment 3.
+
+```{r, fig.show = 'hide'}
+Group_Means <- aggregate(Data$Response, by = list(Data$Treatment), mean)
+colnames(Group_Means) <- c("Treatment", "Mean")
+X_Axis_Limits <- c(min(hist(Data$Response)$breaks), max(hist(Data$Response)$breaks))
+X_Values <- seq(X_Axis_Limits[1], X_Axis_Limits[2], 0.01)
+Treatment_1_Densities <- dnorm(X_Values, Group_Means$Mean[1], sqrt(Group_Variances$Variance[1]))
+Treatment_2_Densities <- dnorm(X_Values, Group_Means$Mean[2], sqrt(Group_Variances$Variance[2]))
+Treatment_3_Densities <- dnorm(X_Values, Group_Means$Mean[3], sqrt(Group_Variances$Variance[3]))
+Y_Axis_Limits <- c(0, max(c(max(Treatment_1_Densities), max(Treatment_2_Densities), max(Treatment_3_Densities))))
+```
+```{r}
+par(mar = c(9, 4, 4, 2))
+plot(0, type = 'n', xlim = X_Axis_Limits, ylim = Y_Axis_Limits, ylab = "Density", xlab = "Response", main = "Density Distributions\nfor All Treatment Groups")
+lines(X_Values, Treatment_1_Densities, col = 1)
+lines(X_Values, Treatment_2_Densities, col = 2)
+lines(X_Values, Treatment_3_Densities, col = 3)
+legend("bottom", inset = c(0, -0.667), title = "Treatment", legend = 1:3, col = 1:3, lty = 1, horiz = T, xpd = T)
+cutoffs <- which(diff(Treatment_1_Densities < Treatment_3_Densities) != 0)
+polygon(c(min(X_Values), X_Values, max(X_Values)), c(0, Treatment_3_Densities[1:cutoffs[1]], Treatment_1_Densities[(cutoffs[1] + 1):cutoffs[2]], Treatment_3_Densities[(cutoffs[2] + 1):length(Treatment_2_Densities)], 0), col = 6)
+```
+
+Their shared area under the curve is 0.049:
+
+```{r}
+pnorm(X_Values[cutoffs[1]], Group_Means$Mean[3], sqrt(Group_Variances$Variance[3])) + pnorm(X_Values[cutoffs[2]], Group_Means$Mean[1], sqrt(Group_Variances$Variance[1])) - pnorm(X_Values[cutoffs[1]], Group_Means$Mean[1], sqrt(Group_Variances$Variance[1])) + pnorm(X_Values[cutoffs[2]], Group_Means$Mean[3], sqrt(Group_Variances$Variance[3]), lower.tail = F)
+```
+
+Thus, under my proposed (and admittedly very conservative) method, we would report treatments 1 and 3 to be significantly different from one another, and no other pairwise comparisons indicate treatments that are significantly different.
+
+Everything that ANOVA does you could do using this new method. (I think.)
+
+You can control for experimentwise error by reducing the pairwise comparison cutoff probability accordingly.
+
+I still need to work through how this new method can account for hierarchical, or nested, data structures such as split plots, strip plots, and Latin squares.
+
+Admittedly, there are problems associated with this method that distinguish it from a run-of-the-mill ANOVA.
+
+It is possible to have two groups that have very similar means to be significantly different under this new method. This can happen if their variances are very, very different. Here's an example:
+
+```{r, fig.show = 'hide'}
+set.seed(24)
+Replication <- rep(1:10, 2)
+Treatment <- as.factor(rep(1:2, each = 10))
+Response <- c(rnorm(10, 100, 50), rnorm(10, 100, 0.01))
+Response <- ifelse(Response < 0, 0, Response)
+Data <- data.frame(Replication = Replication, Treatment = Treatment, Response = Response)
+par(mar = c(9, 4, 4, 2))
+Group_Means <- aggregate(Data$Response, by = list(Data$Treatment), mean)
+colnames(Group_Means) <- c("Treatment", "Mean")
+Group_Means
+```
+
+We can see that the group means are within 0.5 % of each other:
+
+```{r}
+100 * (max(Group_Means$Mean) - min(Group_Means$Mean)) / max(Group_Means$Mean)
+```
+
+Their variances, however, are vastly different.
+
+```{r}
+Group_Variances <- aggregate(Data$Response, by = list(Data$Treatment), var)
+colnames(Group_Variances) <- c("Treatment", "Variance")
+Group_Variances
+```
+
+Treatment 1's variance is over 9 million times greater than treatment 2's variance.
+
+```{r}
+Group_Variances$Variance[1] / Group_Variances$Variance[2]
+```
+
+Let's take a look at these graphically.
+
+```{r, fig.show = 'hide'}
+X_Axis_Limits <- c(min(hist(Data$Response)$breaks), max(hist(Data$Response)$breaks))
+X_Values <- seq(X_Axis_Limits[1], X_Axis_Limits[2], 0.001)
+Group_Variances <- aggregate(Data$Response, by = list(Data$Treatment), var)
+colnames(Group_Variances) <- c("Treatment", "Variance")
+Treatment_1_Densities <- dnorm(X_Values, Group_Means$Mean[1], sqrt(Group_Variances$Variance[1]))
+Treatment_2_Densities <- dnorm(X_Values, Group_Means$Mean[2], sqrt(Group_Variances$Variance[2]))
+Y_Axis_Limits <- c(0, max(c(max(Treatment_1_Densities), max(Treatment_2_Densities))))
+```
+```{r}
+par(mar = c(9, 4, 4, 2))
+plot(0, type = 'n', xlim = X_Axis_Limits, ylim = Y_Axis_Limits, ylab = "Density", xlab = "Response", main = "Density Distributions\nfor All Treatment Groups")
+lines(X_Values, Treatment_1_Densities, col = 1)
+lines(X_Values, Treatment_2_Densities, col = 2)
+legend("bottom", inset = c(0, -0.667), title = "Treatment", legend = 1:2, col = 1:2, lty = 1, horiz = T, xpd = T)
+```
+
+What happened here? Treatment 1's variance is so big that it's density curve doesn't really peak - it's essentially flat. Treatment 2's variance is so small that it's density curve has a very, very tall peak, and almost no tails. Remember, the areas under the curve for both of these curves are 1.
+
+We won't really be able to see their intersection graphically like we did in the previous example, but what's the shared area under the curve for treatments 1 and 2 here?
+
+Actually, let's zoom in a little bit so we can see what's going on.
+
+```{r}
+par(mar = c(9, 4, 4, 2))
+X_Axis_Limits <- c(99.75, 100.25)
+X_Values <- seq(X_Axis_Limits[1], X_Axis_Limits[2], 0.00001)
+Treatment_1_Densities <- dnorm(X_Values, Group_Means$Mean[1], sqrt(Group_Variances$Variance[1]))
+Treatment_2_Densities <- dnorm(X_Values, Group_Means$Mean[2], sqrt(Group_Variances$Variance[2]))
+Y_Axis_Limits <- c(0, 0.02)
+plot(0, type = 'n', xlim = X_Axis_Limits, ylim = Y_Axis_Limits, ylab = "Density", xlab = "Response", main = "Density Distributions\nfor All Treatment Groups")
+lines(X_Values, Treatment_1_Densities, col = 1)
+lines(X_Values, Treatment_2_Densities, col = 2)
+legend("bottom", inset = c(0, -0.667), title = "Treatment", legend = 1:2, col = 1:2, lty = 1, horiz = T, xpd = T)
+```
+
+What's the shared are under the curve?
+
+```{r}
+par(mar = c(9, 4, 4, 2))
+X_Axis_Limits <- c(99.75, 100.25)
+X_Values <- seq(X_Axis_Limits[1], X_Axis_Limits[2], 0.00001)
+Treatment_1_Densities <- dnorm(X_Values, Group_Means$Mean[1], sqrt(Group_Variances$Variance[1]))
+Treatment_2_Densities <- dnorm(X_Values, Group_Means$Mean[2], sqrt(Group_Variances$Variance[2]))
+Y_Axis_Limits <- c(0, 0.02)
+plot(0, type = 'n', xlim = X_Axis_Limits, ylim = Y_Axis_Limits, ylab = "Density", xlab = "Response", main = "Density Distributions\nfor All Treatment Groups")
+lines(X_Values, Treatment_1_Densities, col = 1)
+lines(X_Values, Treatment_2_Densities, col = 2)
+legend("bottom", inset = c(0, -0.667), title = "Treatment", legend = 1:2, col = 1:2, lty = 1, horiz = T, xpd = T)
+cutoffs <- which(diff(Treatment_1_Densities < Treatment_2_Densities) != 0)
+polygon(c(min(X_Values), X_Values, max(X_Values)), c(0, Treatment_2_Densities[1:cutoffs[1]], Treatment_1_Densities[(cutoffs[1] + 1):cutoffs[2]], Treatment_2_Densities[(cutoffs[2] + 1):length(Treatment_2_Densities)], 0), col = 3)
+```
+
+What's the shared area under these two curves?
+
+```{r}
+pnorm(X_Values[cutoffs[1]], Group_Means$Mean[2], sqrt(Group_Variances$Variance[2])) + pnorm(X_Values[cutoffs[2]], Group_Means$Mean[1], sqrt(Group_Variances$Variance[1])) - pnorm(X_Values[cutoffs[1]], Group_Means$Mean[1], sqrt(Group_Variances$Variance[1])) + pnorm(X_Values[cutoffs[2]], Group_Means$Mean[2], sqrt(Group_Variances$Variance[2]), lower.tail = F)
+```
+
+Wow. These two groups have approximately the same mean, but their density curves share an area of just 0.00111 in common.
+
+I've made the claim that we aren't restricted by the homogeneity of variances assumption. Let me suggest to you now that we aren't restricted by the normality of residuals assumption either.
+
+We could have two groups that aren't normally-distributed. One might follow a bimodal distribution and the other may follow a chi-square distribution.
+
+```{r}
+set.seed(1)
+Number_of_Observations <- 40
+Group_1_Response <- c(rnorm(Number_of_Observations / 2, 3, 0.3), rnorm(Number_of_Observations / 2, 6, 0.3))
+Group_2_Response <- rchisq(Number_of_Observations, 5)
+par(mfrow = c(2, 1), mar = c(5, 4, 4, 2) + 0.1)
+hist(Group_1_Response, main = "Group 1 Histogram", xlab = "Response", probability = T)
+lines(density(Group_1_Response), col = 2)
+hist(Group_2_Response, main = "Group 2 Histogram", xlab = "Response", probability = T)
+lines(density(Group_2_Response), col = 2)
+par(mfrow = c(1, 1))
+```
+
+Can we perform the same operation on these two groups even if we don't model them with parametric distributions?
+
+Yes, we sure can.
+
+```{r, fig.show = 'hide'}
+X_Axis_Limits <- c(min(c(min(hist(Group_1_Response)$breaks), min(hist(Group_2_Response)$breaks))), max(c(max(hist(Group_1_Response)$breaks), max(hist(Group_2_Response)$breaks))))
+Y_Axis_Limits <- c(min(c(min(hist(Group_1_Response, probability = T)$density), min(hist(Group_2_Response, probability = T)$density))), max(c(max(hist(Group_1_Response, probability = T)$density), max(hist(Group_2_Response, probability = T)$density))))
+```
+```{r}
+par(mar = c(9, 4, 4, 2))
+plot(0, xlim = X_Axis_Limits, ylim = Y_Axis_Limits, type = 'n', main = "Density Distributions", ylab = "Density", xlab = "Response")
+lines(density(Group_1_Response), col = 1)
+lines(density(Group_2_Response), col = 2)
+legend("bottom", inset = c(0, -0.667), title = "Group", legend = 1:2, col = 1:2, lty = 1, horiz = T, xpd = T)
+```
+
+Even though these two distributions are not parameterized, we should still be able to calculate the shared area under their curves by using all of the predicted values for their respective distributions.
+
+```{r}
+Group_1_x <- density(Group_1_Response)$x
+Group_1_y <- density(Group_1_Response)$y
+Group_1 <- data.frame(x = Group_1_x, Group_1_y = Group_1_y)
+Group_1_Interpolated_Values <- as.data.frame(approx(Group_1$x, Group_1$Group_1_y, xout = seq(round(min(Group_1$x), 2), round(max(Group_1$x), 2), 0.01)))
+colnames(Group_1_Interpolated_Values) <- c("X", "Group_1_Y")
+Group_1_Interpolated_Values$Group_1_Y <- as.numeric(as.character(Group_1_Interpolated_Values$Group_1_Y))
+Group_2_x <- density(Group_2_Response)$x
+Group_2_y <- density(Group_2_Response)$y
+Group_2 <- data.frame(x = Group_2_x, Group_2_y = Group_2_y)
+Group_2_Interpolated_Values <- as.data.frame(approx(Group_2$x, Group_2$Group_2_y, xout = seq(round(min(Group_2$x), 2), round(max(Group_2$x), 2), 0.01)))
+colnames(Group_2_Interpolated_Values) <- c("X", "Group_2_Y")
+Group_2_Interpolated_Values$Group_2_Y <- as.numeric(as.character(Group_2_Interpolated_Values$Group_2_Y))
+Both_Groups <- merge(Group_1_Interpolated_Values, Group_2_Interpolated_Values, by = "X")
+par(mar = c(9, 4, 4, 2))
+plot(0, xlim = c(min(Both_Groups$X), max(Both_Groups$X)), ylim = c(0, max(c(max(Both_Groups$Group_1_Y), max(Both_Groups$Group_2_Y)))), type = 'n', main = "Density Distributions", ylab = "Density", xlab = "Response")
+lines(Both_Groups$X, Both_Groups$Group_1_Y, col = 1)
+lines(Both_Groups$X, Both_Groups$Group_2_Y, col = 2)
+legend("bottom", inset = c(0, -0.667), title = "Group", legend = 1:2, col = 1:2, lty = 1, horiz = T, xpd = T)
+cutoffs <- which(diff(Both_Groups$Group_1_Y < Both_Groups$Group_2_Y) != 0)
+X_Values <- c(min(Both_Groups$X), Both_Groups$X, max(Both_Groups$X))
+Y_Values <- c(0, Both_Groups$Group_1_Y[1:cutoffs[1]], Both_Groups$Group_2_Y[(cutoffs[1] + 1):cutoffs[2]], Both_Groups$Group_1_Y[(cutoffs[2] + 1):cutoffs[3]], Both_Groups$Group_2_Y[(cutoffs[3] + 1):cutoffs[4]], Both_Groups$Group_1_Y[(cutoffs[4] + 1):length(Both_Groups$Group_1_Y)], 0)
+polygon(X_Values, Y_Values, col = 3)
+area <- function (X) {
+  x <- X[ ,1]
+  y <- X[ ,2]
+  lx <- length(x)
+  -sum((x[2:lx] - x[1:lx - 1]) * (y[2:lx] + y[1:lx - 1])) / 2
+}
+p_Value <- as.character(round(abs(area(cbind(X_Values, Y_Values))), 5))
+text(7.5, 0.225, paste0("Shared Area\nUnder the Curve =\np-Value =\n", p_Value), cex = 0.8)
+```
+
+Thank you so much for attending my talk. I hope you've learned something, and I look forward to receiving your thoughtful, critical, and honest feedback.
+<br/><br/>
