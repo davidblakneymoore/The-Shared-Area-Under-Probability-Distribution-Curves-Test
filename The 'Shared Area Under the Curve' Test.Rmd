@@ -22,7 +22,7 @@ The two assumptions that can be particularly problematic are:
 1. Homogeneity of variances
 2. Normality of residuals
 
-What this means is that groups need to have roughly the same variances, and observations within groups need to be normally-distributed.
+What this means is that groups need to have roughly the same variances, and observations within groups need to be normally distributed.
 
 Often, these assumptions are just not true for our data.
 
@@ -84,7 +84,7 @@ colnames(Shapiro_Wilk_Test_p_Values) <- paste("Treatment", seq_len(3), sep = "_"
 Shapiro_Wilk_Test_p_Values
 ```
 
-Since all of the p values are greater than 0.05, we can be pretty confident that our responses within each group are normally- distributed.
+Since all of the p values are greater than 0.05, we can be pretty confident that our responses within each group are normally distributed.
 
 Remember from before that our analysis of variance results suggested that there are group differences. Let's run a post-hoc means separation test to see which groups are actually different.
 
@@ -102,7 +102,7 @@ They assume that variances are equal within each group, and as such, they calcul
 
 Here is a graphical representation of what just happened.
 
-We assumed that each group was normally-distributed and had the same variance.
+We assumed that each group was normally distributed and had the same variance.
 
 ```{r, fig.show = 'hide'}
 Variance <- mean(Group_Variances$Variance)
@@ -166,9 +166,9 @@ lines(rep(X_Values[which(Treatment_1_Densities == max(Treatment_1_Densities))] +
 
 Treatment 2's mean is within this tolerance, so it's not different. Treatment 3's mean isn't, so it is different.
 
-This method works really well if all groups are normally-distributed and if variances are equal. What if they're not?
+This method works really well if all groups are normally distributed and if variances are equal. What if they're not?
 
-What if groups are normally-distributed, but variances are vastly different from one another?
+What if groups are normally distributed, but variances are vastly different from one another?
 
 Here's another made-up example from a completely randomized design experiment.
 
@@ -215,7 +215,7 @@ colnames(Shapiro_Wilk_Test_p_Values) <- paste("Treatment", seq_len(3), sep = "_"
 Shapiro_Wilk_Test_p_Values
 ```
 
-It looks like responses from each group are normally-distributed.
+It looks like responses from each group are normally distributed.
 
 Let's look at these data graphically.
 
@@ -273,7 +273,7 @@ We could try to transform our data somehow, but is there a better solution?
 
 Well, yes. First of all, if variances are vastly different from one another, you should be able to confidently say that the two groups aren't similar, even if their means are the same, just based on the fact that their variances are so different. Their means may not be different, but if the variability around them is drastically different, the observations priobably come from two different populations.
 
-I am proposing an alternative to the run-of-the-mill analysis of variance test used so widely in research. My new test does not require homogeneity of variances, and, as you will see later, an alternate version of this new test does not even require normally-distributed residuals.
+I am proposing an alternative to the run-of-the-mill analysis of variance test used so widely in research. My new test does not require homogeneity of variances, and, as you will see later, an alternate version of this new test does not even require normally distributed residuals.
 
 Let's continue with this most recent example.
 
@@ -506,7 +506,7 @@ Wow. These two groups have approximately the same mean, but their density curves
 
 I've made the claim that we aren't restricted by the homogeneity of variances assumption. Let me suggest to you now that we aren't restricted by the normality of residuals assumption either.
 
-We could have two groups that aren't normally-distributed. One might follow a bimodal distribution and the other may follow a chi-square distribution.
+We could have two groups that aren't normally distributed. One might follow a bimodal distribution and the other may follow a chi-square distribution.
 
 ```{r}
 set.seed(1)
